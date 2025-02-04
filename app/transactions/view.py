@@ -4,6 +4,7 @@ from app import db
 from app.users.models import User
 from app.transactions.models import Transaction
 from app.transactions import transactions_bp
+from app.categories.models import Category
 
 @transactions_bp.route("/transactions", methods=["POST"])
 @swag_from({
@@ -20,11 +21,11 @@ from app.transactions import transactions_bp
                 "properties": {
                     "amount": {"type": "number"},
                     "type": {"type": "string"},
-                    "category": {"type": "string"},
+                    "categories": {"type": "array", "items": {"type": "string"}},
                     "description": {"type": "string"},
                     "user_ids": {"type": "array", "items": {"type": "integer"}}
                 },
-                "required": ["amount", "type", "category", "user_ids"]
+                "required": ["amount", "type", "categories", "user_ids"]
             }
         }
     ],
@@ -36,14 +37,22 @@ from app.transactions import transactions_bp
 def create_transaction():
     data = request.get_json()
 
-    user_ids = data.get("user_ids", [])  
+    user_ids = data.get("user_ids", [])
     if not user_ids:
         return jsonify({"message": "At least one user is required"}), 400
+
+    categories_data = data.get("categories", [])
+    if not categories_data:
+        return jsonify({"message": "At least one category is required"}), 400
+
+    # Fetch categories from the database
+    categories = Category.query.filter(Category.name.in_(categories_data)).all()
+    if not categories:
+        return jsonify({"message": "Invalid categories provided"}), 400
 
     transaction = Transaction(
         amount=data["amount"],
         type=data["type"],
-        category=data["category"],
         description=data.get("description", "")
     )
 
@@ -52,6 +61,7 @@ def create_transaction():
         return jsonify({"message": "No valid users found"}), 400
 
     transaction.users.extend(users)
+    transaction.categories.extend(categories)
 
     db.session.add(transaction)
     db.session.commit()
@@ -75,7 +85,7 @@ def create_transaction():
                         "id": {"type": "integer"},
                         "amount": {"type": "number"},
                         "type": {"type": "string"},
-                        "category": {"type": "string"},
+                        "categories": {"type": "array", "items": {"type": "string"}},
                         "description": {"type": "string"},
                         "date": {"type": "string"},
                         "users": {"type": "array", "items": {"type": "integer"}}
@@ -92,7 +102,7 @@ def get_transactions():
             "id": t.id,
             "amount": t.amount,
             "type": t.type,
-            "category": t.category,
+            "categories": [category.name for category in t.categories],
             "description": t.description,
             "date": t.date.isoformat(),
             "users": [u.id for u in t.users]
@@ -123,7 +133,7 @@ def get_transaction(transaction_id):
         "id": transaction.id,
         "amount": transaction.amount,
         "type": transaction.type,
-        "category": transaction.category,
+        "categories": [category.name for category in transaction.categories],
         "description": transaction.description,
         "date": transaction.date.isoformat(),
         "users": [user.id for user in transaction.users]
@@ -146,7 +156,7 @@ def get_transaction(transaction_id):
                 "properties": {
                     "amount": {"type": "number"},
                     "type": {"type": "string"},
-                    "category": {"type": "string"},
+                    "categories": {"type": "array", "items": {"type": "string"}},
                     "description": {"type": "string"},
                     "user_ids": {"type": "array", "items": {"type": "integer"}}
                 }
@@ -167,9 +177,15 @@ def update_transaction(transaction_id):
 
     transaction.amount = data.get("amount", transaction.amount)
     transaction.type = data.get("type", transaction.type)
-    transaction.category = data.get("category", transaction.category)
     transaction.description = data.get("description", transaction.description)
 
+    # Update categories
+    categories_data = data.get("categories", [])
+    if categories_data:
+        categories = Category.query.filter(Category.name.in_(categories_data)).all()
+        transaction.categories = categories
+
+    # Update users
     user_ids = data.get("user_ids", [])
     if user_ids:
         users = User.query.filter(User.id.in_(user_ids)).all()
