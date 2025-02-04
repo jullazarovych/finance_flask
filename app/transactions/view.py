@@ -1,8 +1,10 @@
 from flask import request, jsonify
 from flasgger import swag_from
 from app import db
+from sqlalchemy import func
 from app.users.models import User
-from app.transactions.models import Transaction
+from app.transactions.models import Transaction, transaction_categories, user_transaction
+from datetime import datetime, timedelta
 from app.transactions import transactions_bp
 from app.categories.models import Category
 @transactions_bp.route("/transactions", methods=["POST"])
@@ -220,3 +222,140 @@ def delete_transaction(transaction_id):
     db.session.delete(transaction)
     db.session.commit()
     return jsonify({"message": "Transaction deleted!"})
+
+@transactions_bp.route("/reports/monthly_expenses", methods=["POST"])
+@swag_from({
+    "tags": ["Reports"],
+    "summary": "Get monthly transactions report filtered by type and category",
+    "description": "This endpoint returns the total amounts for a given month, grouped by category. Can be filtered by transaction type and specific category.",
+    "parameters": [
+        {
+            "name": "body",
+            "in": "body",
+            "required": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "month": {
+                        "type": "string",
+                        "description": "The month for which transactions need to be calculated. Format: YYYY-MM",
+                        "example": "2025-02"
+                    },
+                    "user_id": {
+                        "type": "integer",
+                        "description": "The ID of the user whose transactions need to be calculated",
+                        "example": 1
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "Transaction type filter (expense/revenue). If not provided, all types will be included",
+                        "enum": ["expense", "revenue"],
+                        "example": "expense"
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Category name to filter by. If not provided, all categories will be included",
+                        "example": "food"
+                    }
+                },
+                "required": ["month", "user_id"]
+            }
+        }
+    ],
+    "responses": {
+        "200": {
+            "description": "List of total amounts grouped by category",
+            "schema": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "category": {
+                            "type": "string",
+                            "description": "The name of the category"
+                        },
+                        "total_amount": {
+                            "type": "number",
+                            "description": "The total amount for this category"
+                        }
+                    }
+                }
+            }
+        },
+        "400": {
+            "description": "Invalid input parameters"
+        },
+        "404": {
+            "description": "User not found"
+        }
+    }
+})
+def monthly_expenses():
+    data = request.get_json()
+    if not data:
+        return jsonify({"message": "Request body is required"}), 400
+
+    month = data.get("month")
+    if not month:
+        return jsonify({"message": "Month parameter is required"}), 400
+
+    user_id = data.get("user_id")
+    if user_id is None:
+        return jsonify({"message": "User ID parameter is required"}), 400
+
+    transaction_type = data.get("type")
+    category_name = data.get("category")
+
+    if transaction_type and transaction_type not in ['expense', 'revenue']:
+        return jsonify({"message": "Invalid transaction type. Must be 'expense' or 'revenue'"}), 400
+
+    try:
+        month_start = datetime.strptime(month, "%Y-%m")
+        if month_start.month == 12:
+            month_end = month_start.replace(year=month_start.year + 1, month=1, day=1)
+        else:
+            month_end = month_start.replace(month=month_start.month + 1, day=1)
+        month_end = month_end - timedelta(microseconds=1)
+        
+    except ValueError as e:
+        return jsonify({"message": "Invalid month format"}), 400
+    try:
+        query = db.session.query(
+            Category.name,
+            func.sum(Transaction.amount).label('total_amount')
+        ).join(
+            transaction_categories,
+            Transaction.id == transaction_categories.c.transaction_id
+        ).join(
+            Category,
+            Category.id == transaction_categories.c.category_id
+        ).join(
+            user_transaction,
+            Transaction.id == user_transaction.c.transaction_id
+        ).filter(
+            Transaction.date >= month_start,
+            Transaction.date <= month_end,
+            user_transaction.c.user_id == user_id
+        )
+
+        if transaction_type:
+            query = query.filter(Transaction.type == transaction_type)
+
+        if category_name:
+            query = query.filter(Category.name == category_name)
+
+        query = query.group_by(Category.name)
+
+        transactions = query.all()
+        result = [{
+            "category": transaction[0],
+            "total_amount": float(transaction[1]) if transaction[1] is not None else 0
+        } for transaction in transactions]
+
+        return jsonify(result)
+    
+    except Exception as e:
+        return jsonify({
+            "message": "Internal server error",
+            "error": str(e)
+        }), 500
