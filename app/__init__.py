@@ -1,6 +1,8 @@
 from flask import Flask
+from flask_bcrypt import Bcrypt
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from flasgger import Swagger
 from sqlalchemy.orm import DeclarativeBase
 
 class Base(DeclarativeBase):
@@ -14,8 +16,14 @@ def create_app(config_name="config"):
     app.config.from_object(config_name)  
     db.init_app(app)
     migrate.init_app(app, db)
-
+    swagger = Swagger(app)
     with app.app_context():
-        from . import view
+        from .view import main_bp 
+        app.register_blueprint(main_bp)
+
+        from app.users.models import User
+        from app.users import users_bp
+        app.register_blueprint(users_bp, url_prefix="/users")
+
     return app
 
