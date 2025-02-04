@@ -2,7 +2,7 @@ from app import db
 
 transaction_categories = db.Table(
     "transaction_categories",
-    db.Column("transaction_id", db.Integer, db.ForeignKey("transaction.id"), primary_key=True),
+    db.Column("transaction_id", db.Integer, db.ForeignKey("transactions.id"), primary_key=True),
     db.Column("category_id", db.Integer, db.ForeignKey("categories.id"), primary_key=True)
 )
 

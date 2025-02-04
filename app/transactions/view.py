@@ -5,7 +5,6 @@ from app.users.models import User
 from app.transactions.models import Transaction
 from app.transactions import transactions_bp
 from app.categories.models import Category
-
 @transactions_bp.route("/transactions", methods=["POST"])
 @swag_from({
     "tags": ["Transactions"],
@@ -45,20 +44,24 @@ def create_transaction():
     if not categories_data:
         return jsonify({"message": "At least one category is required"}), 400
 
-    # Fetch categories from the database
+    valid_types = {"expense", "revenue"}
+    transaction_type = data.get("type")
+    if transaction_type not in valid_types:
+        return jsonify({"message": "Invalid transaction type. Allowed values: 'expense', 'revenue'"}), 400
+
     categories = Category.query.filter(Category.name.in_(categories_data)).all()
     if not categories:
         return jsonify({"message": "Invalid categories provided"}), 400
 
-    transaction = Transaction(
-        amount=data["amount"],
-        type=data["type"],
-        description=data.get("description", "")
-    )
-
     users = User.query.filter(User.id.in_(user_ids)).all()
     if not users:
         return jsonify({"message": "No valid users found"}), 400
+
+    transaction = Transaction(
+        amount=data["amount"],
+        type=transaction_type,
+        description=data.get("description", "")
+    )
 
     transaction.users.extend(users)
     transaction.categories.extend(categories)
@@ -139,7 +142,6 @@ def get_transaction(transaction_id):
         "users": [user.id for user in transaction.users]
     })
 
-
 @transactions_bp.route("/transactions/<int:transaction_id>", methods=["PUT"])
 @swag_from({
     "tags": ["Transactions"],
@@ -165,6 +167,7 @@ def get_transaction(transaction_id):
     ],
     "responses": {
         "200": {"description": "Transaction updated successfully"},
+        "400": {"description": "Invalid transaction type"},
         "404": {"description": "Transaction not found"}
     }
 })
@@ -175,17 +178,19 @@ def update_transaction(transaction_id):
 
     data = request.get_json()
 
+    valid_types = {"expense", "revenue"}
+    if "type" in data and data["type"] not in valid_types:
+        return jsonify({"message": "Invalid transaction type. Allowed values: 'expense', 'revenue'"}), 400
+
     transaction.amount = data.get("amount", transaction.amount)
     transaction.type = data.get("type", transaction.type)
     transaction.description = data.get("description", transaction.description)
 
-    # Update categories
     categories_data = data.get("categories", [])
     if categories_data:
         categories = Category.query.filter(Category.name.in_(categories_data)).all()
         transaction.categories = categories
 
-    # Update users
     user_ids = data.get("user_ids", [])
     if user_ids:
         users = User.query.filter(User.id.in_(user_ids)).all()
@@ -193,7 +198,6 @@ def update_transaction(transaction_id):
 
     db.session.commit()
     return jsonify({"message": "Transaction updated!"})
-
 
 @transactions_bp.route("/transactions/<int:transaction_id>", methods=["DELETE"])
 @swag_from({
