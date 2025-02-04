@@ -19,9 +19,10 @@ class Transaction(db.Model):
     users = db.relationship("User", secondary=user_transaction, backref=db.backref("transactions", lazy="dynamic"))
     categories = db.relationship("Category", secondary=transaction_categories, back_populates="transactions")
 
-    def __init__(self, amount, type, description=None, categories=None):
+    def __init__(self, amount, type, description=None, date=None, categories=None):
         self.amount = amount
         self.type = type
         self.description = description
+        self.date = date if date else datetime.utcnow() 
         if categories:
             self.categories = categories

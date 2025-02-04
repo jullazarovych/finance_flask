@@ -21,10 +21,15 @@ from app.categories.models import Category
                 "type": "object",
                 "properties": {
                     "amount": {"type": "number"},
-                    "type": {"type": "string"},
+                    "type": {"type": "string", "enum": ["expense", "revenue"]},
                     "categories": {"type": "array", "items": {"type": "string"}},
                     "description": {"type": "string"},
-                    "user_ids": {"type": "array", "items": {"type": "integer"}}
+                    "user_ids": {"type": "array", "items": {"type": "integer"}},
+                    "date": {
+                        "type": "string",
+                        "description": "Transaction date (optional, format: YYYY-MM-DD HH:MM:SS)",
+                        "example": "2025-02-04 14:30:00"
+                    }
                 },
                 "required": ["amount", "type", "categories", "user_ids"]
             }
@@ -49,7 +54,16 @@ def create_transaction():
     valid_types = {"expense", "revenue"}
     transaction_type = data.get("type")
     if transaction_type not in valid_types:
-        return jsonify({"message": "Invalid transaction type. Allowed values: 'expense', 'revenue'"}), 400
+        return jsonify({"message": "Invalid transaction type. Allowed: 'expense', 'revenue'"}), 400
+
+    date_str = data.get("date")
+    if date_str:
+        try:
+            transaction_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return jsonify({"message": "Invalid date format. Use 'YYYY-MM-DD HH:MM:SS'"}), 400
+    else:
+        transaction_date = datetime.utcnow()
 
     categories = Category.query.filter(Category.name.in_(categories_data)).all()
     if not categories:
@@ -62,7 +76,8 @@ def create_transaction():
     transaction = Transaction(
         amount=data["amount"],
         type=transaction_type,
-        description=data.get("description", "")
+        description=data.get("description", ""),
+        date=transaction_date
     )
 
     transaction.users.extend(users)
@@ -72,6 +87,7 @@ def create_transaction():
     db.session.commit()
 
     return jsonify({"message": "Transaction created!", "transaction_id": transaction.id}), 201
+
 
 
 @transactions_bp.route("/transactions", methods=["GET"])
@@ -159,10 +175,15 @@ def get_transaction(transaction_id):
                 "type": "object",
                 "properties": {
                     "amount": {"type": "number"},
-                    "type": {"type": "string"},
+                    "type": {"type": "string", "enum": ["expense", "revenue"]},
                     "categories": {"type": "array", "items": {"type": "string"}},
                     "description": {"type": "string"},
-                    "user_ids": {"type": "array", "items": {"type": "integer"}}
+                    "user_ids": {"type": "array", "items": {"type": "integer"}},
+                    "date": {
+                        "type": "string",
+                        "description": "Transaction date (optional, format: YYYY-MM-DD HH:MM:SS)",
+                        "example": "2025-02-04 14:30:00"
+                    }
                 }
             }
         }
@@ -182,11 +203,17 @@ def update_transaction(transaction_id):
 
     valid_types = {"expense", "revenue"}
     if "type" in data and data["type"] not in valid_types:
-        return jsonify({"message": "Invalid transaction type. Allowed values: 'expense', 'revenue'"}), 400
+        return jsonify({"message": "Invalid transaction type. Allowed: 'expense', 'revenue'"}), 400
 
     transaction.amount = data.get("amount", transaction.amount)
     transaction.type = data.get("type", transaction.type)
     transaction.description = data.get("description", transaction.description)
+
+    if "date" in data:
+        try:
+            transaction.date = datetime.strptime(data["date"], "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return jsonify({"message": "Invalid date format. Use 'YYYY-MM-DD HH:MM:SS'"}), 400
 
     categories_data = data.get("categories", [])
     if categories_data:
@@ -200,6 +227,7 @@ def update_transaction(transaction_id):
 
     db.session.commit()
     return jsonify({"message": "Transaction updated!"})
+
 
 @transactions_bp.route("/transactions/<int:transaction_id>", methods=["DELETE"])
 @swag_from({
