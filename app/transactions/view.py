@@ -359,3 +359,95 @@ def monthly_expenses():
             "message": "Internal server error",
             "error": str(e)
         }), 500
+    
+
+@transactions_bp.route("/reports/daily_expenses", methods=["POST"])
+@swag_from({
+    "tags": ["Reports"],
+    "summary": "Get daily expenses/revenues for a user",
+    "description": "This endpoint returns the daily total of either expenses or revenues for a given user. Transactions are grouped by date. Parameters should be passed in the request body as JSON.",
+    "parameters": [
+        {
+            "name": "body",
+            "in": "body",
+            "required": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "user_id": {"type": "integer", "description": "The ID of the user for whom the report is generated", "example": 1},
+                    "type": {"type": "string", "enum": ["expense", "revenue"], "description": "Transaction type", "example": "expense"},
+                    "start_date": {"type": "string", "description": "Start date (YYYY-MM-DD)", "example": "2025-02-01"},
+                    "end_date": {"type": "string", "description": "End date (YYYY-MM-DD)", "example": "2025-02-10"}
+                },
+                "required": ["user_id", "type"]
+            }
+        }
+    ],
+    "responses": {
+        "200": {
+            "description": "Daily expenses/revenues grouped by date",
+            "schema": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "date": {"type": "string", "description": "Date of transactions"},
+                        "total_amount": {"type": "number", "description": "Total expense or revenue for that day"}
+                    }
+                }
+            }
+        },
+        "400": {"description": "Invalid input, missing parameters, or incorrect format"},
+        "404": {"description": "User not found"}
+    }
+})
+def daily_expenses():
+    data = request.get_json()
+
+    if not data:
+        return jsonify({"message": "Request body must be JSON"}), 400
+
+    user_id = data.get("user_id")
+    transaction_type = data.get("type")
+    start_date = data.get("start_date")
+    end_date = data.get("end_date")
+
+    if not user_id or not transaction_type:
+        return jsonify({"message": "Both user_id and type are required"}), 400
+
+    if transaction_type not in ["expense", "revenue"]:
+        return jsonify({"message": "Invalid transaction type. Allowed values: 'expense', 'revenue'"}), 400
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"message": "User not found"}), 404
+
+    if not start_date:
+        start_date = datetime.today().replace(day=1).strftime("%Y-%m-%d")
+    if not end_date:
+        end_date = datetime.today().strftime("%Y-%m-%d")
+
+    try:
+        start_date = datetime.strptime(start_date, "%Y-%m-%d")
+        end_date = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+    except ValueError:
+        return jsonify({"message": "Invalid date format. Use YYYY-MM-DD"}), 400
+
+    transactions = db.session.query(
+        func.date(Transaction.date).label("transaction_date"),
+        func.sum(Transaction.amount).label("total_amount")
+    ).join(Transaction.users).filter(
+        Transaction.type == transaction_type,
+        Transaction.date >= start_date,
+        Transaction.date <= end_date,
+        User.id == user_id
+    ).group_by(
+        func.date(Transaction.date)
+    ).order_by(
+        func.date(Transaction.date)
+    ).all()
+
+    return jsonify([
+        {"date": str(t.transaction_date), "total_amount": t.total_amount}
+        for t in transactions
+    ])
