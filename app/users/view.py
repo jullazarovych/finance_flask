@@ -19,7 +19,7 @@ from app.users import users_bp
                     "username": {"type": "string"},
                     "email": {"type": "string"},
                     "password": {"type": "string"},
-                    "about_me": {"type": "string"}  # Додаємо about_me
+                    "about_me": {"type": "string"}  
                 },
                 "required": ["username", "email", "password"]
             }

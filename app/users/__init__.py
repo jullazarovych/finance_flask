@@ -1,4 +1,4 @@
 from flask import Blueprint
 
-users_bp=Blueprint("user_name", __name__, url_prefix="/api")
+users_bp=Blueprint("user_name", __name__)
 from . import view
