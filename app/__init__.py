@@ -27,6 +27,9 @@ def create_app(config_name="config"):
         from app.users.models import User
         from app.users import users_bp
         app.register_blueprint(users_bp, url_prefix="/api")
+        from app.transactions import transactions_bp
+        from app.transactions.models import Transaction
+        app.register_blueprint(transactions_bp, url_prefix="/api")
         Swagger(app)
     return app
 

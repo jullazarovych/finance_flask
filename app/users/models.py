@@ -1,7 +1,6 @@
 from app import db, bcrypt
-from flask_login import UserMixin
 
-class User(UserMixin, db.Model):
+class User( db.Model):
     __tablename__ = "users"
 
     id = db.Column(db.Integer, primary_key=True)

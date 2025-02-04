@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import request, jsonify
 from flasgger import swag_from
 from app import db
 from app.users.models import User
