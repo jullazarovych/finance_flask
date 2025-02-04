@@ -32,6 +32,10 @@ def create_app(config_name="config"):
         from app.transactions import transactions_bp
         app.register_blueprint(transactions_bp, url_prefix="/api")
         
+        from app.categories.models import Category
+        from app.categories import categories_bp
+        app.register_blueprint(categories_bp, url_prefix="/api")
+        
         Swagger(app)
     return app
 
